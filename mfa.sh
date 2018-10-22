@@ -14,6 +14,10 @@
 
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+IS_WIN=false
+if [[ ! -z ${WINDIR} ]]; then
+    IS_WIN=true;
+fi
 
 # 1 or 2 args ok
 if [[ $# -ne 1 && $# -ne 2 ]]; then
@@ -35,17 +39,16 @@ fi
 
 AWS_COMMAND_PATH="$(which aws 2> /dev/null)"
 if [[ -z ${AWS_COMMAND_PATH} ]]; then
-    if [[ ! -z ${WINDIR} ]]; then
+    if [[ "${IS_WIN}" == true ]]; then
         # Windows
         AWS_COMMAND_PATH="/c/Program Files/Amazon/AWSCLI/bin/aws.cmd" 
     fi
-    if [[ -z ${AWS_COMMAND_PATH} ]]; then
-        echo "The AWS CLI doesn't appear to be installed"
-	[ $PS1 ] && return || exit 3;
-    fi
+fi
+if [[ -z ${AWS_COMMAND_PATH} ]]; then
+    echo "The AWS CLI doesn't appear to be installed"
+    [ $PS1 ] && return || exit 3;
 fi
 echo "Using AWS CLI found at ${AWS_COMMAND_PATH}"
-
 
 
 AWS_CLI_PROFILE="${2:-default}"
@@ -57,6 +60,12 @@ echo "MFA ARN: ${ARN_OF_MFA}"
 echo "MFA Token Code: ${MFA_TOKEN_CODE}"
 
 echo "Your Temporary Creds:"
+if [[ "${IS_WIN}" == true ]]; then
+    AWK_COMMAND='{printf("set AWS_ACCESS_KEY_ID=\"%s\"\nset AWS_SECRET_ACCESS_KEY=\"%s\"\nset AWS_SESSION_TOKEN=\"%s\"\nset AWS_SECURITY_TOKEN=\"%s\"\nsetx AWS_ACCESS_KEY_ID \"%s\"\nsetx AWS_SECRET_ACCESS_KEY \"%s\"\nsetx AWS_SESSION_TOKEN \"%s\"\nsetx AWS_SECURITY_TOKEN \"%s\"\nexport AWS_ACCESS_KEY_ID=\"%s\"\nexport AWS_SECRET_ACCESS_KEY=\"%s\"\nexport AWS_SESSION_TOKEN=\"%s\"\nexport AWS_SECURITY_TOKEN=\"%s\"\n",$2,$4,$5,$5,$2,$4,$5,$5,$2,$4,$5,$5)}'
+else
+    AWK_COMMAND='{printf("export AWS_ACCESS_KEY_ID=\"%s\"\nexport AWS_SECRET_ACCESS_KEY=\"%s\"\nexport AWS_SESSION_TOKEN=\"%s\"\nexport AWS_SECURITY_TOKEN=\"%s\"\n",$2,$4,$5,$5)}'
+fi
+
 "${AWS_COMMAND_PATH}" --profile "${AWS_CLI_PROFILE}" sts get-session-token --duration 129600 \
   --serial-number "${ARN_OF_MFA}" --token-code "${MFA_TOKEN_CODE}" --output text \
-  | awk '{printf("export AWS_ACCESS_KEY_ID=\"%s\"\nexport AWS_SECRET_ACCESS_KEY=\"%s\"\nexport AWS_SESSION_TOKEN=\"%s\"\nexport AWS_SECURITY_TOKEN=\"%s\"\n",$2,$4,$5,$5)}' | tee ~/.token_file
+  | awk "${AWK_COMMAND}" | tee ~/.token_file
